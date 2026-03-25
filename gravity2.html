@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Celestial Collapse: Manual Navigation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #030305; overflow: hidden; font-family: 'Inter', sans-serif; touch-action: none; color: #e2e8f0; }
+        canvas { display: block; }
+        .overlay { position: absolute; pointer-events: none; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: space-between; padding: 24px; box-sizing: border-box; z-index: 10; }
+        .panel { pointer-events: auto; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 12px 16px; }
+        .label { font-size: 0.7rem; text-transform: uppercase; color: #94a3b8; margin-bottom: 2px; }
+        .value { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .btn { background: #3b82f6; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+        .btn:hover { background: #2563eb; transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); scale: 0.95; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .right-controls { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 16px; align-items: center; }
+        
+        /* Navigation D-Pad */
+        .nav-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 8px; }
+        .nav-btn { width: 40px; height: 40px; display: flex; items-center; justify-content: center; background: rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); transition: 0.2s; color: white; }
+        .nav-btn:hover { background: rgba(255,255,255,0.2); }
+        .nav-btn:active { background: #3b82f6; }
+
+        input[type=range] { cursor: pointer; accent-color: #3b82f6; }
+        .time-badge { font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; background: rgba(59, 130, 246, 0.2); color: #60a5fa; margin-left: 8px; vertical-align: middle; }
+        .focus-indicator { color: #fbbf24; font-size: 0.75rem; font-weight: 600; animation: pulse 2s infinite; }
+        
+        .velocity-gauge-container { position: absolute; right: 24px; bottom: 100px; width: 60px; height: 200px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .gauge-track { width: 12px; height: 100%; background: rgba(255,255,255,0.1); border-radius: 6px; position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); }
+        .gauge-fill { width: 100%; position: absolute; bottom: 0; background: linear-gradient(to top, #3b82f6, #60a5fa, #f87171); transition: height 0.1s ease-out; }
+        
+        #ai-log { position: absolute; left: 24px; top: 120px; width: 280px; max-height: 200px; pointer-events: none; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
+        .log-entry { background: rgba(30, 41, 59, 0.7); border-left: 3px solid #3b82f6; padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: 0.75rem; animation: slideIn 0.3s ease-out; backdrop-filter: blur(4px); }
+        
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        #ai-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; place-items: center; z-index: 100; padding: 20px; }
+        .modal-content { background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; width: 100%; max-width: 500px; padding: 24px; pointer-events: auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+    </style>
+</head>
+<body>
+
+    <div id="ai-modal">
+        <div class="modal-content">
+            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">✨ Cosmic Intelligence Review</h3>
+            <div id="ai-analysis-text" class="text-slate-300 leading-relaxed text-sm mb-6 max-h-60 overflow-y-auto italic">
+                Gathering cosmic data...
+            </div>
+            <button class="btn w-full justify-center py-3" onclick="closeModal()">Return to Universe</button>
+        </div>
+    </div>
+
+    <div id="ai-log"></div>
+
+    <div class="overlay">
+        <div class="flex justify-between items-start">
+            <div class="flex flex-col gap-4">
+                <div class="flex gap-4">
+                    <div class="panel">
+                        <div class="label">Total Mass</div>
+                        <div id="mass-display" class="value">0</div>
+                    </div>
+                    <div class="panel">
+                        <div class="label">Bodies</div>
+                        <div id="count-display" class="value">0</div>
+                    </div>
+                </div>
+                <button id="analyze-btn" class="panel btn !bg-indigo-600/80 hover:!bg-indigo-500" onclick="runAiAnalysis()">
+                    ✨ Analyze Gravity System
+                </button>
+            </div>
+            
+            <div class="flex flex-col gap-2 items-end">
+                <div class="panel">
+                    <div class="flex justify-between items-center mb-1">
+                        <div class="label">Cosmic Timeline</div>
+                        <span id="speed-label" class="time-badge">Real Time</span>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <input type="range" id="time-slider" min="1" max="100" value="1" class="w-40">
+                        <div id="time-val" class="value text-blue-400 w-12 text-right">1x</div>
+                    </div>
+                    <div class="mt-2 pt-2 border-t border-white/10">
+                        <div class="label">Age of Universe</div>
+                        <div id="universe-age" class="text-lg font-mono font-bold text-white">0.00 <span class="text-xs text-slate-500">GYr</span></div>
+                    </div>
+                </div>
+                <div id="camera-status" class="panel hidden">
+                    <div class="label">Camera Tracking</div>
+                    <div class="focus-indicator">● LOCKING BIGGEST BODY</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side Controls: Zoom & Nav -->
+        <div class="right-controls">
+            <!-- Zoom Panel -->
+            <div class="panel flex flex-col gap-2">
+                <div class="label text-center">Zoom</div>
+                <button class="btn" onclick="adjustZoom(1.2)">+</button>
+                <div id="zoom-val" class="text-xs font-mono text-center">1.0x</div>
+                <button class="btn" onclick="adjustZoom(0.8)">−</button>
+            </div>
+
+            <!-- Navigation Panel -->
+            <div class="panel flex flex-col items-center">
+                <div class="label mb-2">Camera Mode</div>
+                <div class="flex bg-slate-900 rounded-lg p-1 mb-3">
+                    <button id="mode-auto" class="px-3 py-1 text-[10px] font-bold rounded-md bg-blue-600" onclick="setCameraMode('auto')">AUTO</button>
+                    <button id="mode-manual" class="px-3 py-1 text-[10px] font-bold rounded-md" onclick="setCameraMode('manual')">MANUAL</button>
+                </div>
+                
+                <div id="nav-dpad" class="nav-pad opacity-40 pointer-events-none transition-opacity">
+                    <div></div>
+                    <button class="nav-btn" onmousedown="startNav('up')" onmouseup="stopNav()" ontouchstart="startNav('up')" ontouchend="stopNav()">↑</button>
+                    <div></div>
+                    <button class="nav-btn" onmousedown="startNav('left')" onmouseup="stopNav()" ontouchstart="startNav('left')" ontouchend="stopNav()">←</button>
+                    <button class="nav-btn" style="cursor:default; background:none; border:none;">🎮</button>
+                    <button class="nav-btn" onmousedown="startNav('right')" onmouseup="stopNav()" ontouchstart="startNav('right')" ontouchend="stopNav()">→</button>
+                    <div></div>
+                    <button class="nav-btn" onmousedown="startNav('down')" onmouseup="stopNav()" ontouchstart="startNav('down')" ontouchend="stopNav()">↓</button>
+                    <div></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="velocity-section" class="velocity-gauge-container panel hidden">
+            <div class="label text-center">Velocity</div>
+            <div class="gauge-track">
+                <div id="gauge-fill" class="gauge-fill" style="height: 0%"></div>
+            </div>
+            <div class="flex flex-col items-center">
+                <div id="speed-text" class="text-[10px] font-bold text-blue-400">0.0</div>
+            </div>
+        </div>
+
+        <div class="panel w-fit self-center md:self-end">
+            <div class="label">Simulation State</div>
+            <div class="flex gap-2 mt-2">
+                <button class="btn" onclick="resetSim()">Reset Singularity</button>
+                <button class="btn" style="background:rgba(255,255,255,0.1)" onclick="spawnBelt()">✨ Spawn Orbiting Belt</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const apiKey = ""; 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'celestial-collapse';
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const massDisplay = document.getElementById('mass-display');
+        const countDisplay = document.getElementById('count-display');
+        const zoomValEl = document.getElementById('zoom-val');
+        const timeSlider = document.getElementById('time-slider');
+        const timeValEl = document.getElementById('time-val');
+        const universeAgeEl = document.getElementById('universe-age');
+        const cameraStatus = document.getElementById('camera-status');
+        const aiLog = document.getElementById('ai-log');
+        const analyzeBtn = document.getElementById('analyze-btn');
+
+        const velocitySection = document.getElementById('velocity-section');
+        const gaugeFill = document.getElementById('gauge-fill');
+        const speedText = document.getElementById('speed-text');
+
+        const G = 0.5; 
+        const DENSITY = 0.8;
+        const GRID_SPACING = 50; 
+        const WARP_STRENGTH = 1200;
+        const GRID_MARGIN = 200;
+        
+        let bodies = [];
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let mousePos = { x: 0, y: 0 };
+        let timeScale = 1;
+        let cosmicAge = 0;
+        let lastAiLogTime = 0;
+
+        let camera = { 
+            x: 0, y: 0, targetX: 0, targetY: 0, 
+            smoothing: 0.08, zoom: 1.0, targetZoom: 1.0,
+            autoTrack: true 
+        };
+
+        // Navigation state
+        let navDir = { x: 0, y: 0 };
+        const NAV_SPEED = 15;
+
+        class Body {
+            constructor(x, y, vx, vy, mass, color) {
+                this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.mass = mass;
+                this.radius = Math.sqrt(this.mass / Math.PI) / DENSITY;
+                this.color = color || `hsl(${Math.random() * 60 + 180}, 70%, 60%)`;
+            }
+            draw() {
+                const sX = (this.x - camera.x) * camera.zoom + canvas.width / 2;
+                const sY = (this.y - camera.y) * camera.zoom + canvas.height / 2;
+                const sR = this.radius * camera.zoom;
+                
+                if (this.mass > 400) {
+                    const glow = ctx.createRadialGradient(sX, sY, sR, sX, sY, sR * 4);
+                    glow.addColorStop(0, this.color.replace('hsl', 'hsla').replace(')', ', 0.2)'));
+                    glow.addColorStop(1, 'transparent');
+                    ctx.fillStyle = glow;
+                    ctx.beginPath(); ctx.arc(sX, sY, sR * 4, 0, Math.PI * 2); ctx.fill();
+                }
+
+                ctx.fillStyle = this.color;
+                ctx.beginPath(); ctx.arc(sX, sY, sR, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                ctx.beginPath(); ctx.arc(sX - sR*0.3, sY - sR*0.3, sR*0.2, 0, Math.PI*2); ctx.fill();
+            }
+        }
+
+        function getBiggest() { return bodies.length ? bodies.reduce((a, b) => a.mass > b.mass ? a : b) : null; }
+
+        // CAMERA MODES
+        function setCameraMode(mode) {
+            camera.autoTrack = (mode === 'auto');
+            const autoBtn = document.getElementById('mode-auto');
+            const manualBtn = document.getElementById('mode-manual');
+            const dpad = document.getElementById('nav-dpad');
+
+            if (camera.autoTrack) {
+                autoBtn.classList.add('bg-blue-600');
+                manualBtn.classList.remove('bg-blue-600');
+                dpad.classList.add('opacity-40', 'pointer-events-none');
+                stopNav(); // Ensure no leftover movement
+            } else {
+                autoBtn.classList.remove('bg-blue-600');
+                manualBtn.classList.add('bg-blue-600');
+                dpad.classList.remove('opacity-40', 'pointer-events-none');
+            }
+        }
+
+        function startNav(dir) {
+            if (camera.autoTrack) return;
+            switch(dir) {
+                case 'up': navDir.y = -NAV_SPEED; break;
+                case 'down': navDir.y = NAV_SPEED; break;
+                case 'left': navDir.x = -NAV_SPEED; break;
+                case 'right': navDir.x = NAV_SPEED; break;
+            }
+        }
+
+        function stopNav() {
+            navDir.x = 0;
+            navDir.y = 0;
+        }
+
+        // AI LOGIC (Gemini)
+        async function callGemini(prompt, systemPrompt = "You are a cosmic observer.") {
+            let retries = 5;
+            let delay = 1000;
+            while (retries > 0) {
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            systemInstruction: { parts: [{ text: systemPrompt }] }
+                        })
+                    });
+                    const data = await response.json();
+                    return data.candidates?.[0]?.content?.parts?.[0]?.text || "...";
+                } catch (error) {
+                    retries--;
+                    if (retries === 0) throw error;
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        async function runAiAnalysis() {
+            if (bodies.length === 0) return;
+            analyzeBtn.disabled = true; analyzeBtn.innerText = "✨ Thinking...";
+            document.getElementById('ai-modal').style.display = 'grid';
+            document.getElementById('ai-analysis-text').innerText = "Simulating billion-year projections...";
+            const systemData = bodies.slice(0, 5).map(b => ({ mass: b.mass.toFixed(0) }));
+            const prompt = `Simulation snapshot: ${JSON.stringify(systemData)}. Total age: ${cosmicAge.toFixed(2)} Gyr. Review in 50 words.`;
+            try {
+                const analysis = await callGemini(prompt, "You are an advanced AI cosmic architect.");
+                document.getElementById('ai-analysis-text').innerText = analysis;
+            } catch (e) {
+                document.getElementById('ai-analysis-text').innerText = "Transmission interrupted.";
+            }
+            analyzeBtn.disabled = false; analyzeBtn.innerText = "✨ Analyze Gravity System";
+        }
+
+        async function logAiEvent(type, data) {
+            const now = Date.now();
+            if (now - lastAiLogTime < 15000) return;
+            lastAiLogTime = now;
+            try {
+                const logText = await callGemini(`Event: ${type} (${data}). One short sentence.`, "Poetic space chronicler.");
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                entry.innerText = logText.trim();
+                aiLog.prepend(entry);
+                setTimeout(() => { entry.style.opacity = '0'; setTimeout(() => entry.remove(), 500); }, 7000);
+            } catch(e) {}
+        }
+
+        function closeModal() { document.getElementById('ai-modal').style.display = 'none'; }
+
+        // SPACETIME WARP
+        function getWarpedPoint(wx, wy) {
+            let dxTotal = 0, dyTotal = 0;
+            for (const b of bodies) {
+                const dx = b.x - wx, dy = b.y - wy, d2 = dx * dx + dy * dy + 100;
+                const pull = (b.mass * WARP_STRENGTH) / (d2 * Math.sqrt(d2));
+                const maxDisp = 60;
+                dxTotal += Math.max(-maxDisp, Math.min(maxDisp, dx * pull));
+                dyTotal += Math.max(-maxDisp, Math.min(maxDisp, dy * pull));
+            }
+            return {
+                x: (wx + dxTotal - camera.x) * camera.zoom + canvas.width / 2,
+                y: (wy + dyTotal - camera.y) * camera.zoom + canvas.height / 2
+            };
+        }
+
+        function drawSpacetimeGrid() {
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(70, 130, 255, 0.15)';
+            ctx.lineWidth = 0.5;
+            const viewW = canvas.width / camera.zoom, viewH = canvas.height / camera.zoom;
+            const startX = Math.floor((camera.x - viewW/2 - GRID_MARGIN) / GRID_SPACING) * GRID_SPACING;
+            const endX = Math.ceil((camera.x + viewW/2 + GRID_MARGIN) / GRID_SPACING) * GRID_SPACING;
+            const startY = Math.floor((camera.y - viewH/2 - GRID_MARGIN) / GRID_SPACING) * GRID_SPACING;
+            const endY = Math.ceil((camera.y + viewH/2 + GRID_MARGIN) / GRID_SPACING) * GRID_SPACING;
+
+            for (let x = startX; x <= endX; x += GRID_SPACING) {
+                let first = true;
+                for (let y = startY; y <= endY; y += GRID_SPACING / 2) {
+                    const p = getWarpedPoint(x, y);
+                    if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                    else ctx.lineTo(p.x, p.y);
+                }
+            }
+            for (let y = startY; y <= endY; y += GRID_SPACING) {
+                let first = true;
+                for (let x = startX; x <= endX; x += GRID_SPACING / 2) {
+                    const p = getWarpedPoint(x, y);
+                    if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                    else ctx.lineTo(p.x, p.y);
+                }
+            }
+            ctx.stroke();
+        }
+
+        // MAIN LOOP
+        function update() {
+            const steps = Math.min(timeScale, 10);
+            const multiplier = timeScale / steps;
+
+            for(let s=0; s<steps; s++) {
+                for (let i = 0; i < bodies.length; i++) {
+                    const b1 = bodies[i];
+                    for (let j = i + 1; j < bodies.length; j++) {
+                        const b2 = bodies[j];
+                        const dx = b2.x - b1.x, dy = b2.y - b1.y, distSq = dx*dx + dy*dy, dist = Math.sqrt(distSq);
+                        if (dist < b1.radius + b2.radius) {
+                            const tm = b1.mass + b2.mass;
+                            if (tm > 1000) logAiEvent('Massive Collision', `Combined mass ${tm.toFixed(0)}`);
+                            bodies.push(new Body((b1.x*b1.mass+b2.x*b2.mass)/tm, (b1.y*b1.mass+b2.y*b2.mass)/tm, (b1.vx*b1.mass+b2.vx*b2.mass)/tm, (b1.vy*b1.mass+b2.vy*b2.mass)/tm, tm, b1.mass > b2.mass ? b1.color : b2.color));
+                            bodies.splice(j, 1); bodies.splice(i, 1); i--; break;
+                        } else {
+                            const f = (G * b1.mass * b2.mass) / distSq;
+                            b1.vx += (dx/dist)*(f/b1.mass)*multiplier; b1.vy += (dy/dist)*(f/b1.mass)*multiplier;
+                            b2.vx -= (dx/dist)*(f/b2.mass)*multiplier; b2.vy -= (dy/dist)*(f/b2.mass)*multiplier;
+                        }
+                    }
+                }
+                bodies.forEach(b => { b.x += b.vx * multiplier; b.y += b.vy * multiplier; });
+            }
+
+            cosmicAge += (0.0001 * timeScale);
+            universeAgeEl.innerHTML = `${cosmicAge.toFixed(3)} <span class="text-xs text-slate-500">GYr</span>`;
+
+            const biggest = getBiggest();
+            if (biggest && camera.autoTrack) {
+                camera.targetX = biggest.x; camera.targetY = biggest.y;
+                cameraStatus.classList.remove('hidden');
+                speedText.innerText = Math.sqrt(biggest.vx**2 + biggest.vy**2).toFixed(1);
+                velocitySection.classList.remove('hidden');
+            } else {
+                cameraStatus.classList.add('hidden');
+                if (!camera.autoTrack) {
+                    camera.targetX += navDir.x / camera.zoom;
+                    camera.targetY += navDir.y / camera.zoom;
+                }
+            }
+            
+            camera.x += (camera.targetX - camera.x) * camera.smoothing;
+            camera.y += (camera.targetY - camera.y) * camera.smoothing;
+            camera.zoom += (camera.targetZoom - camera.zoom) * camera.smoothing;
+
+            massDisplay.innerText = Math.floor(bodies.reduce((s, b) => s + b.mass, 0));
+            countDisplay.innerText = bodies.length;
+            zoomValEl.innerText = camera.zoom.toFixed(1) + 'x';
+
+            render();
+            requestAnimationFrame(update);
+        }
+
+        function render() {
+            ctx.fillStyle = '#030305'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            drawSpacetimeGrid();
+            if (isDragging) {
+                ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(dragStart.x, dragStart.y); ctx.lineTo(mousePos.x, mousePos.y); ctx.stroke();
+            }
+            bodies.forEach(b => b.draw());
+        }
+
+        // INPUTS
+        window.onmousedown = e => { if(e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') { isDragging = true; dragStart = {x: e.clientX, y: e.clientY}; mousePos = dragStart; } };
+        window.onmousemove = e => { mousePos = {x: e.clientX, y: e.clientY}; };
+        window.onmouseup = e => { if(!isDragging) return; isDragging = false;
+            const dx = (dragStart.x - e.clientX) * 0.06 / camera.zoom;
+            const dy = (dragStart.y - e.clientY) * 0.06 / camera.zoom;
+            const sX = (dragStart.x - canvas.width / 2) / camera.zoom + camera.x;
+            const sY = (dragStart.y - canvas.height / 2) / camera.zoom + camera.y;
+            bodies.push(new Body(sX, sY, dx, dy, Math.random() * 50 + 10));
+        };
+        window.onwheel = e => camera.targetZoom = Math.max(0.05, camera.targetZoom * (e.deltaY > 0 ? 0.9 : 1.1));
+        window.onresize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        timeSlider.oninput = e => { timeScale = parseInt(e.target.value); timeValEl.innerText = timeScale + 'x'; };
+
+        function adjustZoom(f) { camera.targetZoom = Math.max(0.05, camera.targetZoom * f); }
+        function resetSim() { bodies = []; cosmicAge = 0; aiLog.innerHTML = ""; }
+        function spawnBelt() {
+            const b = getBiggest(); const cX = b?b.x:camera.x, cY = b?b.y:camera.y;
+            for(let i=0; i<30; i++) {
+                const a = Math.random()*Math.PI*2, d = 250+Math.random()*400;
+                const s = Math.sqrt((G*(b?b.mass:2000))/d);
+                bodies.push(new Body(cX+Math.cos(a)*d, cY+Math.sin(a)*d, Math.cos(a+Math.PI/2)*s, Math.sin(a+Math.PI/2)*s, 10));
+            }
+        }
+
+        window.onresize(); update();
+    </script>
+</body>
+</html>
